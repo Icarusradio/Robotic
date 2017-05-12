@@ -47,7 +47,7 @@ def ir_callback(data):
             print("Time increment = {}".format(delta_time / count))
             scan_pub = rospy.Publisher('scan', LaserScan, queue_size=50)
             r = rospy.Rate(1.0)
-            while not rospy.is_shutdown():
+            if not rospy.is_shutdown():
                 current_time = rospy.Time.now()
                 scan = LaserScan()
                 scan.header.stamp = current_time
