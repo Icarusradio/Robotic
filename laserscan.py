@@ -8,7 +8,7 @@ from std_msgs.msg import Int32
 from sensor_msgs.msg import LaserScan
 
 # the output message controlling the speed and direction of the robot
-from geometry_msgs.msg import Twist 
+from geometry_msgs.msg import Twist
 
 list_ang = []
 count = 0
@@ -20,16 +20,16 @@ def ir_callback(data):
     global count
     global timer
     # Twist is a message type in ros, here we use an Twist message to control kobuki's speed
-    # twist. linear.x is the forward velocity, if it is zero, robot will be static, 
+    # twist. linear.x is the forward velocity, if it is zero, robot will be static,
     # if it is grater than 0, robot will move forward, otherwise, robot will move backward
-    # twist.angular.axis is the rotatin velocity around the axis 
-    # 
-    # Around which axis do we have to turn? In wich direction will it turn with a positive value? 
+    # twist.angular.axis is the rotatin velocity around the axis
+    #
+    # Around which axis do we have to turn? In wich direction will it turn with a positive value?
     # Right hand coordinate system: x forward, y left, z up
 
     #twist = Twist()
     #twist.linear.x = 0.
-    #twist.angular.z = 0. 
+    #twist.angular.z = 0.
 
 
 
@@ -37,8 +37,10 @@ def ir_callback(data):
     raw_data = data.data
     ang = raw_data >> 16
     dis = raw_data & 65535
+    voltage = float(dis) * 5.0 / 1024.0
+    distance = 72.4883100736 * (1.0 / float(voltage)) - 13.641013781
     count += 1
-    list_ang.append(ang)
+    list_ang.append(distance)
     if (ang < 280) and (count > 20):
         temp = time.clock()
         delta_time = temp - timer
@@ -52,12 +54,12 @@ def ir_callback(data):
                 scan = LaserScan()
                 scan.header.stamp = current_time
                 scan.header.frame_id = 'laser_frame'
-                scan.angle_min = -math.pi / 2
-                scan.angle_max = math.pi / 2
-                scan.angle_increment = math.pi / count
+                scan.angle_min = -math.pi
+                scan.angle_max = math.pi
+                scan.angle_increment = 2 * math.pi / count
                 scan.time_increment = delta_time / count
-                scan.range_min = 200
-                scan.range_max = 950
+                scan.range_min = 0
+                scan.range_max = 100
                 scan.ranges = []
                 scan.intensities = []
                 for i in list_ang:
@@ -69,14 +71,14 @@ def ir_callback(data):
         timer = temp
 
     # actually publish the twist message
-    #kobuki_velocity_pub.publish(twist)  
-    
-    
+    #kobuki_velocity_pub.publish(twist)
+
+
 def range_controller():
-    
+
     # define the publisher globally
     #global kobuki_velocity_pub
-    
+
     # initialize the node
     #rospy.init_node('range_controller', anonymous=True)
     rospy.init_node('laser_scan_publisher')
@@ -94,4 +96,3 @@ def range_controller():
 # start the line follow
 if __name__ == '__main__':
     range_controller()
-    
