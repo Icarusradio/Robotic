@@ -16,14 +16,23 @@ Bumped = False
 
 def ir_callback(data):
 
-	global Bumped
+    global Bumped
     global count
     global pubA1
     global pubA3
     global sensorData
+
+    #--------------参数------------------#
     thre = 200
     # 判断的阈值，左右两边最大值大于这个的时候会转弯，否则直走；此值越大，机器人转弯时离墙越近
-    # 如果机器人拐弯方向小
+    # 如果机器人拐弯方向反了，就把这个值调成负的（别把下面的角速度调成负的，不然打印向左向右拐的信息就反了）
+    linearSpeed = 0.2
+    #直行时线速度
+    angularSpeed = 0.3
+    #转弯时角速度
+    #--------------参数------------------#
+
+
     raw_data = data.data
     # Twist is a message type in ros, here we use an Twist message to control kobuki's speed
     # twist. linear.x is the forward velocity, if it is zero, robot will be static, 
@@ -34,10 +43,7 @@ def ir_callback(data):
     # Right hand coordinate system: x forward, y left, z up
 
     twist = Twist()
-    linearSpeed = 0.2
-    #直行时线速度
-    angularSpeed = 0.3
-    #转弯时角速度
+
     
 
 
@@ -52,8 +58,8 @@ def ir_callback(data):
         if count > 300:
             T = count
             count = 0
-            sl = [sensorData[i] for i in range(10,T//4)].sorted()[3]
-            sr = [sensorData[i] for i in range(T//4,T//2)].sorted()[3]
+            sl = sorted([sensorData[i] for i in range(10,T//4)], reverse = True)[3]
+            sr = sorted([sensorData[i] for i in range(T//4,T//2)], reverse = True)[3]
             # 取出左边和右边的第三大值（不取最大，怕数据波动），两个range函数里的范围可能还需要修改
             if sl - sr < -thre: 
                 twist.angular.z = angularSpeed
@@ -63,17 +69,17 @@ def ir_callback(data):
                 twist.angular.z = -angularSpeed
                 twist.linear.x = 0
                 print("Trun left")
-        	else: 
-        		twist.linear.x = linearSpeed
-            	twist.angular.z = 0.0 
-            	print("Go straight")
+            else: 
+                twist.linear.x = linearSpeed
+                twist.angular.z = 0.0 
+                print("Go straight")
             
             print(sl,sr)
             print("-----")
     if Bumped: 
-		twist.linear.x = 0.0
-		twist.angular.z = 0.0
-	#如果遭到撞击，就停止运行，否则继续运行
+        twist.linear.x = 0.0
+        twist.angular.z = 0.0
+    #如果遭到撞击，就停止运行，否则继续运行
 
     kobuki_velocity_pub.publish(twist)  
     
@@ -97,27 +103,27 @@ def range_controller():
     # every time a new message is received - the parameter passed to the function is the message
     rospy.Subscriber("/ir_data", Int32, ir_callback)
     rospy.Subscriber("/mobile_base/events/button",ButtonEvent,ButtonEventCallback)
-	rospy.Subscriber("/mobile_base/events/bumper",BumperEvent,BumperEventCallback)
-	#订阅button和bumper的node以获取信息
+    rospy.Subscriber("/mobile_base/events/bumper",BumperEvent,BumperEventCallback)
+    #订阅button和bumper的node以获取信息
 
     # spin() simply keeps python from exiting until this node is stopped
     rospy.spin()
 
 def ButtonEventCallback(data):
-	global Bumped
+    global Bumped
     if data.button == ButtonEvent.Button0:
         Bumped = False
         print("B0 pressed")
     elif data.button == ButtonEvent.Button1:
-    	print("B1 pressed")
+        print("B1 pressed")
         Bumped = False
     else:
-    	print("B2 pressed")
+        print("B2 pressed")
         Bumped = False
-	#按钮被按下的时候清零flag，允许机器人继续运行（目前机器人对所有按钮都会反应）
+    #按钮被按下的时候清零flag，允许机器人继续运行（目前机器人对所有按钮都会反应）
 
 def BumperEventCallback(data):
-	global Bumped
+    global Bumped
     if data.state == BumperEvent.PRESSED:
         Bumped = True
         print("Opps, bumped.")
