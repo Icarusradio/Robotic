@@ -4,20 +4,26 @@ import rospy
 # the message that we get from the arduino
 from std_msgs.msg import Int32
 from std_msgs.msg import String
+from kobuki_msgs.msg import ButtonEvent
+from kobuki_msgs.msg import BumperEvent
 
 # the output message controlling the speed and direction of the robot
 from geometry_msgs.msg import Twist 
 
 count = 0
 sensorData = dict()
+Bumped = False
 
 def ir_callback(data):
 
+	global Bumped
     global count
     global pubA1
     global pubA3
     global sensorData
-    thre = 100
+    thre = 200
+    # 判断的阈值，左右两边最大值大于这个的时候会转弯，否则直走；此值越大，机器人转弯时离墙越近
+    # 如果机器人拐弯方向小
     raw_data = data.data
     # Twist is a message type in ros, here we use an Twist message to control kobuki's speed
     # twist. linear.x is the forward velocity, if it is zero, robot will be static, 
@@ -28,8 +34,10 @@ def ir_callback(data):
     # Right hand coordinate system: x forward, y left, z up
 
     twist = Twist()
-    twist.linear.x = 0.1
-    twist.angular.z = 0.0
+    linearSpeed = 0.2
+    #直行时线速度
+    angularSpeed = 0.3
+    #转弯时角速度
     
 
 
@@ -46,59 +54,27 @@ def ir_callback(data):
             count = 0
             sl = [sensorData[i] for i in range(10,T//4)].sorted()[3]
             sr = [sensorData[i] for i in range(T//4,T//2)].sorted()[3]
-            #for i in range(10,T//4):
-            #    if sensorData[i] > sl: sl = sensorData[i]
-            #for i in range(T//4,T//2):
-            #    if sensorData[i] > sr: sr = sensorData[i]
+            # 取出左边和右边的第三大值（不取最大，怕数据波动），两个range函数里的范围可能还需要修改
             if sl - sr < -thre: 
-                twist.angular.z = 0.3
+                twist.angular.z = angularSpeed
+                twist.linear.x = 0
                 print("Turn right")
             elif sl - sr > thre: 
-                twist.angular.z = -0.3
+                twist.angular.z = -angularSpeed
+                twist.linear.x = 0
                 print("Trun left")
         	else: 
+        		twist.linear.x = linearSpeed
             	twist.angular.z = 0.0 
             	print("Go straight")
-            #for i in sensorData: print(i,sensorData[i])
+            
             print(sl,sr)
             print("-----")
-    #print (A1)
-                           
-              
-            
-    #try:
-    '''rate = rospy.Rate(10)
-    while not rospy.is_shutdown():
-        Serial_A1 = String(str(A1))
-        Serial_A3 = String(str(A3))
-        rospy.loginfo(Serial_A1)
-        pubA1.publish(Serial_A1)
-        rospy.loginfo(Serial_A3)
-        pubA3.publish(Serial_A3)
-        rate.sleep()'''
-    #except rospy.ROSInterruptException:
-    #    pass
-                    
-    #print('A1 = {}, A3 = {}'.format(A1, A3))
-    #print('No.{}\tA1 = {}, A3 = {} T = {}'.format(count, A1, A3, T))
-    #print("A1 = {}".format(A1))
-    #print(T)
+    if Bumped: 
+		twist.linear.x = 0.0
+		twist.angular.z = 0.0
+	#如果遭到撞击，就停止运行，否则继续运行
 
-
-	
-    # actually publish the twist message
-    #print(count)
-    '''if A1 < 400:
-        twist.linear.x = 0.0
-    else:
-        if count < T // 4:
-            twist.angular.z = 0    # clockwise
-            #print('Turning right                                count =', count)
-        elif (count > T // 4) and (count < T // 2):
-            twist.angular.z = 0  # anti-clockwise
-            #print('Turning left count =', count)
-        else:
-            twist.linear.x = 0.0'''
     kobuki_velocity_pub.publish(twist)  
     
     
@@ -120,9 +96,32 @@ def range_controller():
     # subscribe to the topic '/ir_data' of message type Int32. The function 'ir_callback' will be called
     # every time a new message is received - the parameter passed to the function is the message
     rospy.Subscriber("/ir_data", Int32, ir_callback)
+    rospy.Subscriber("/mobile_base/events/button",ButtonEvent,ButtonEventCallback)
+	rospy.Subscriber("/mobile_base/events/bumper",BumperEvent,BumperEventCallback)
+	#订阅button和bumper的node以获取信息
 
     # spin() simply keeps python from exiting until this node is stopped
     rospy.spin()
+
+def ButtonEventCallback(data):
+	global Bumped
+    if data.button == ButtonEvent.Button0:
+        Bumped = False
+        print("B0 pressed")
+    elif data.button == ButtonEvent.Button1:
+    	print("B1 pressed")
+        Bumped = False
+    else:
+    	print("B2 pressed")
+        Bumped = False
+	#按钮被按下的时候清零flag，允许机器人继续运行（目前机器人对所有按钮都会反应）
+
+def BumperEventCallback(data):
+	global Bumped
+    if data.state == BumperEvent.PRESSED:
+        Bumped = True
+        print("Opps, bumped.")
+    #被撞到的时候将flag置位，以停止机器人运行
 
 # start the line follow
 if __name__ == '__main__':
