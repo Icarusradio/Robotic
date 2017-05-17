@@ -17,7 +17,7 @@ def ir_callback(data):
     global pubA1
     global pubA3
     global sensorData
-    thre = 400
+    thre = 100
     raw_data = data.data
     # Twist is a message type in ros, here we use an Twist message to control kobuki's speed
     # twist. linear.x is the forward velocity, if it is zero, robot will be static, 
@@ -28,7 +28,7 @@ def ir_callback(data):
     # Right hand coordinate system: x forward, y left, z up
 
     twist = Twist()
-    twist.linear.x = 1.0
+    twist.linear.x = 0.1
     twist.angular.z = 0.0
     
 
@@ -44,21 +44,21 @@ def ir_callback(data):
         if count > 300:
             T = count
             count = 0
-            sl,sr = 0,0
-            for i in range(10,T//4):
-                if sensorData[i] > sl: sl = sensorData[i]
-            for i in range(T//4,T//2):
-                if sensorData[i] > sr: sr = sensorData[i]
-            if sl > thre or sr > thre:
-                if sl < sr: 
-                    twist.angular.z = 0.5
-                    print("Turn right")
-                else: 
-                    twist.angular.z = -0.5
-                    print("Trun left")
-            else: 
-                twist.angular.z = 0.0 
-                print("Go straight")
+            sl = [sensorData[i] for i in range(10,T//4)].sorted()[3]
+            sr = [sensorData[i] for i in range(T//4,T//2)].sorted()[3]
+            #for i in range(10,T//4):
+            #    if sensorData[i] > sl: sl = sensorData[i]
+            #for i in range(T//4,T//2):
+            #    if sensorData[i] > sr: sr = sensorData[i]
+            if sl - sr < -thre: 
+                twist.angular.z = 0.3
+                print("Turn right")
+            elif sl - sr > thre: 
+                twist.angular.z = -0.3
+                print("Trun left")
+        	else: 
+            	twist.angular.z = 0.0 
+            	print("Go straight")
             #for i in sensorData: print(i,sensorData[i])
             print(sl,sr)
             print("-----")
