@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 import rospy
+import tf
 import time
 import math
 
 # the message that we get from the arduino
 from std_msgs.msg import Int32
-
-# the type that we want to publish
 from sensor_msgs.msg import LaserScan
-
 # in order to get the buttom and bumper status
 from kobuki_msgs.msg import ButtonEvent
 from kobuki_msgs.msg import BumperEvent
@@ -20,20 +18,19 @@ from geometry_msgs.msg import Twist
 Bumped = False
 Range = []
 count = 0
-FristPeriod = True
-timer = 0
 velocity = 0.0
 angle_velocity = 0.0
+timer = 0
 
 def ir_callback(data):
     # define the publisher globally
     global kobuki_velocity_pub
-    global scan_pub
     global Bumped
     global count
     global Range
-    global timer
     global velocity
+    global timer
+    global scan_pub
     global angle_velocity
     # Twist is a message type in ros, here we use an Twist message to control kobuki's speed
     # twist. linear.x is the forward velocity, if it is zero, robot will be static,
@@ -52,53 +49,60 @@ def ir_callback(data):
     # write your code here
     A1 = data.data >> 16   # the big sensor
     A3 = data.data & 65535 # the small sensor
-    #print("A1 = {}, A3 = {}".format(A1, A3))
     count += 1
     if A3 < 65:
         if (count > 340) and (count < 380):
-            #print(count, len(Range))
-            MaxRight = max(Range[0:(count - 1) // 4])
-            MaxLeft = max(Range[(count - 1) // 4:(count - 1) // 2])
+            MaxRight = max(Range[0:(count - 1) // 6])
+            Max2 = max(Range[(count - 1) // 6:(count - 1) // 4])
+            Max3 = max(Range[(count - 1) // 4:(count - 1) // 3])
+            MaxLeft = max(Range[(count - 1) // 3:(count - 1) // 2])
+            print(MaxLeft, Max2, Max3, MaxRight)
             if MaxRight - MaxLeft > 200:
-                twist.angular.z = 0.5
-                angle_velocity = 0.5
+                twist.angular.z = float(MaxRight - MaxLeft) / 600.0
+                angle_velocity = float(MaxRight - MaxLeft) / 600.0
                 velocity = 0.0
                 print('Turn Left')
             elif MaxLeft - MaxRight > 200:
-                twist.angular.z = -0.5
-                angle_velocity = -0.5
+                twist.angular.z = float(MaxRight - MaxLeft) / 600.0
+                angle_velocity = float(MaxRight - MaxLeft) / 600.0
                 velocity = 0.0
                 print('Turn Right')
             else:
-                twist.linear.x = 0.1
-                angle_velocity = 0.0
-                velocity = 0.1
-                print('Go straight')
-            print(MaxLeft, MaxRight)
-            '''temp = time.clock()
+                if Max2 - Max3 > 100:
+                    twist.angular.z = 0.75
+                    angle_velocity = 0.75
+                    velocity = 0.0
+                    print('Turn Sharp Left')
+                elif Max2 - Max3 < -100:
+                    twist.angular.z = -0.75
+                    angle_velocity = -0.75
+                    velocity = 0.0
+                    print('Turn Sharp Right')
+                else:
+                    twist.linear.x = 0.2
+                    angle_velocity = 0.0
+                    velocity = 0.2
+                    print('Go straight')
+            temp = time.clock()
             delta_time = temp - timer
-            #print("Delta time = {}".format(delta_time))
-            #print("Time increment = {}".format(delta_time / count))
-            scan_pub = rospy.Publisher('scan', LaserScan, queue_size=50)
-            r = rospy.Rate(1.0)
-            if not rospy.is_shutdown():
-                current_time = rospy.Time.now()
-                scan = LaserScan()
-                scan.header.stamp = current_time
-                scan.header.frame_id = 'laser_frame'
-                scan.angle_min = -math.pi
-                scan.angle_max = math.pi
-                scan.angle_increment = 2 * math.pi / count
-                scan.time_increment = delta_time / count
-                scan.range_min = 0
-                scan.range_max = 1023
-                scan.ranges = []
-                scan.intensities = []
-                for i in Range:
-                    scan.ranges.append(i)
-                scan_pub.publish(scan)
-                r.sleep()'''
+            current_time = rospy.Time.now()
+            scan = LaserScan()
+            scan.ranges = []
+            scan.header.frame_id = 'laser_frame'
+            scan.angle_min = -math.pi
+            scan.angle_max = math.pi
+            scan.range_min = 0
+            scan.range_max = 999999999
+            scan.intensities = []
+            scan.header.stamp = current_time
+            scan.angle_increment = 2 * math.pi / count
+            scan.time_increment = delta_time / count
+            for i in Range:
+                scan.ranges.append(0.01 / (0.0001215342 * float(i) - 0.0143624624))
+            scan_pub.publish(scan)
+            timer = temp
         else:
+            timer = time.clock()
             twist.linear.x = velocity
             twist.angular.z = angle_velocity
         count = 0
@@ -117,6 +121,18 @@ def ir_callback(data):
         twist.angular.z = 0.0
 
     # actually publish the twist message
+    brt = tf.TransformBroadcaster()
+    brt.sendTransform((0, 0, 0),
+                     tf.transformations.quaternion_from_euler(0, 0, 0),
+                     rospy.Time.now(),
+                     "laser_frame",
+                     "base_link")
+    br = tf.TransformBroadcaster()
+    br.sendTransform((twist.linear.x, 0, 0),
+                     tf.transformations.quaternion_from_euler(0, 0, twist.angular.z),
+                     rospy.Time.now(),
+                     "base_link",
+                     "odom")
     kobuki_velocity_pub.publish(twist)
 
 def ButtonEventCallback(data):
@@ -143,14 +159,13 @@ def range_controller():
 
     # define the publisher globally
     global kobuki_velocity_pub
+    global scan_pub
 
     # initialize the node
     rospy.init_node('range_controller', anonymous=True)
 
     # initialize the publisher - to publish Twist message on the topic below...
     kobuki_velocity_pub = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size=10)
-
-    # initialize the publisher - to publish LaserScan message on the topic below...
     scan_pub = rospy.Publisher('/scan', LaserScan, queue_size=50)
 
     # subscribe to the topic '/ir_data' of message type Int32. The function 'ir_callback' will be called
